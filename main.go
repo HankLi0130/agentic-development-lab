@@ -11,6 +11,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", healthHandler)
 	mux.HandleFunc("POST /send-otp", sendOTPHandler(store))
+	mux.HandleFunc("POST /verify-otp", verifyOTPHandler(store))
 
 	addr := ":8080"
 	log.Printf("listening on %s", addr)
