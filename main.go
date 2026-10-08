@@ -6,8 +6,11 @@ import (
 )
 
 func main() {
+	store := newOTPStore()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", healthHandler)
+	mux.HandleFunc("POST /send-otp", sendOTPHandler(store))
 
 	addr := ":8080"
 	log.Printf("listening on %s", addr)
