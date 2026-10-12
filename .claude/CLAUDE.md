@@ -10,6 +10,12 @@
 - When reporting information to me, be extremely concise and sacrifice grammar for the sake of concision.
 - In code: default to writing no comments. Never write multi-paragraph docstrings or multi-line comment blocks — one short line max.
 
+## Verification
+
+- Run `make verify` after every code change. Do not report a task as done until it passes.
+- On failure, fix the implementation. Never modify, delete, or skip existing tests to make them pass. If a test itself seems wrong, stop and ask me.
+- Use `make fmt` to fix formatting failures.
+
 ## Language Rules
 
 - Use English for all code, inline comments, and commit messages.
