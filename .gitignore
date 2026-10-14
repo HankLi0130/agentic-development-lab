@@ -1,2 +1,5 @@
 .DS_Store
+.temp.md
 
+/.idea/*
+!/.idea/vcs.xml

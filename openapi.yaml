@@ -1,0 +1,138 @@
+openapi: 3.0.3
+info:
+  title: OTP Auth Server
+  version: 1.0.0
+
+paths:
+  /send-otp:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '200':
+          description: OTP sent
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [message]
+                properties:
+                  message:
+                    type: string
+                    enum: [otp sent]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /verify-otp:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, otp]
+              properties:
+                email:
+                  type: string
+                otp:
+                  type: string
+                  pattern: '^[0-9]{6}$'
+      responses:
+        '200':
+          description: OTP verified
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [verified]
+                properties:
+                  verified:
+                    type: boolean
+                    enum: [true]
+        '400':
+          description: Malformed JSON, invalid email, or OTP that is not exactly 6 digits
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Wrong OTP or no OTP issued for this email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: invalid otp
+
+  /login:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        '200':
+          description: Login succeeded
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [token]
+                properties:
+                  token:
+                    type: string
+                    minLength: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Email has not completed OTP verification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: email not verified
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  schemas:
+    EmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Malformed JSON or invalid email
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Server failed to generate OTP or token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
