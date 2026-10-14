@@ -44,6 +44,7 @@ paths:
                   type: string
                 otp:
                   type: string
+                  pattern: '^[0-9]{6}$'
       responses:
         '200':
           description: OTP verified
@@ -58,9 +59,13 @@ paths:
                     type: boolean
                     enum: [true]
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: Malformed JSON, invalid email, or OTP that is not exactly 6 digits
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
-          description: Wrong, missing or unknown OTP
+          description: Wrong OTP or no OTP issued for this email
           content:
             application/json:
               schema:

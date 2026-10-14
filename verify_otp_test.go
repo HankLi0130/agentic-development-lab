@@ -29,7 +29,16 @@ func TestVerifyOTP(t *testing.T) {
 		{"invalid email", `{"email":"bad","otp":"123456"}`, http.StatusBadRequest, `{"error":"invalid email"}`},
 		{"invalid body", `{`, http.StatusBadRequest, `{"error":"invalid request body"}`},
 		{"empty body", ``, http.StatusBadRequest, `{"error":"invalid request body"}`},
-		{"missing otp", `{"email":"user@example.com"}`, http.StatusUnauthorized, `{"error":"invalid otp"}`},
+		{"missing otp", `{"email":"user@example.com"}`, http.StatusBadRequest, `{"error":"invalid otp"}`},
+		{"empty otp", `{"email":"user@example.com","otp":""}`, http.StatusBadRequest, `{"error":"invalid otp"}`},
+		{"5 digits", `{"email":"user@example.com","otp":"12345"}`, http.StatusBadRequest, `{"error":"invalid otp"}`},
+		{"7 digits", `{"email":"user@example.com","otp":"1234567"}`, http.StatusBadRequest, `{"error":"invalid otp"}`},
+		{"letter", `{"email":"user@example.com","otp":"12345a"}`, http.StatusBadRequest, `{"error":"invalid otp"}`},
+		{"surrounding space", `{"email":"user@example.com","otp":" 123456"}`, http.StatusBadRequest, `{"error":"invalid otp"}`},
+		{"negative sign", `{"email":"user@example.com","otp":"-12345"}`, http.StatusBadRequest, `{"error":"invalid otp"}`},
+		{"non-ascii digits", `{"email":"user@example.com","otp":"١٢٣٤٥٦"}`, http.StatusBadRequest, `{"error":"invalid otp"}`},
+		{"otp not a string", `{"email":"user@example.com","otp":123456}`, http.StatusBadRequest, `{"error":"invalid request body"}`},
+		{"malformed otp on unknown email", `{"email":"other@example.com","otp":"12"}`, http.StatusBadRequest, `{"error":"invalid otp"}`},
 		{"extra fields ignored", `{"email":"user@example.com","otp":"123456","foo":"bar"}`, http.StatusOK, `{"verified":true}`},
 		{"email checked before otp", `{"email":"bad","otp":"000000"}`, http.StatusBadRequest, `{"error":"invalid email"}`},
 	}
@@ -45,6 +54,17 @@ func TestVerifyOTP(t *testing.T) {
 				t.Fatalf("body = %s, want %s", got, tt.wantBody)
 			}
 		})
+	}
+}
+
+func TestMalformedOTPKeepsStoredOTP(t *testing.T) {
+	store := newOTPStore()
+	store.save("user@example.com", "123456")
+	if rec := postVerify(t, store, `{"email":"user@example.com","otp":"12345"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("malformed otp status = %d, want 400", rec.Code)
+	}
+	if rec := postVerify(t, store, `{"email":"user@example.com","otp":"123456"}`); rec.Code != http.StatusOK {
+		t.Fatalf("correct otp status = %d, want 200", rec.Code)
 	}
 }
 

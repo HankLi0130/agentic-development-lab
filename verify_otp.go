@@ -23,6 +23,11 @@ func verifyOTPHandler(store *otpStore) http.HandlerFunc {
 			return
 		}
 
+		if !isValidOTP(req.OTP) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid otp"})
+			return
+		}
+
 		if !store.verify(req.Email, req.OTP) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid otp"})
 			return
@@ -30,4 +35,16 @@ func verifyOTPHandler(store *otpStore) http.HandlerFunc {
 
 		writeJSON(w, http.StatusOK, map[string]bool{"verified": true})
 	}
+}
+
+func isValidOTP(otp string) bool {
+	if len(otp) != 6 {
+		return false
+	}
+	for i := range len(otp) {
+		if otp[i] < '0' || otp[i] > '9' {
+			return false
+		}
+	}
+	return true
 }

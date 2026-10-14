@@ -121,3 +121,15 @@ func TestIsValidEmail(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateOTPIsSixDigits(t *testing.T) {
+	for range 1000 {
+		otp, err := generateOTP()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !isValidOTP(otp) {
+			t.Fatalf("generated otp %q is not 6 digits", otp)
+		}
+	}
+}
