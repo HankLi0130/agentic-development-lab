@@ -184,3 +184,21 @@ func TestResendOTPResetsExpiry(t *testing.T) {
 		}
 	})
 }
+
+func TestVerifiedOTPIsRemoved(t *testing.T) {
+	store := newOTPStore()
+	store.save("user@example.com", "123456")
+	if rec := postVerify(t, store, `{"email":"user@example.com","otp":"123456"}`); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if _, ok := store.otps["user@example.com"]; ok {
+		t.Fatal("used otp still stored")
+	}
+	if _, ok := store.expiresAt["user@example.com"]; ok {
+		t.Fatal("used otp expiry still stored")
+	}
+	rec := postVerify(t, store, `{"email":"user@example.com","otp":"123456"}`)
+	if got := strings.TrimSpace(rec.Body.String()); rec.Code != http.StatusUnauthorized || got != `{"error":"invalid otp"}` {
+		t.Fatalf("reuse status = %d, body = %s", rec.Code, got)
+	}
+}

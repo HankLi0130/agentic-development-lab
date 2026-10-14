@@ -185,3 +185,27 @@ func TestLoginConcurrentSingleUse(t *testing.T) {
 		t.Fatalf("tokens stored = %d, want 1", len(store.tokens))
 	}
 }
+
+func TestReplayedOTPCannotLoginAgain(t *testing.T) {
+	store := newOTPStore()
+	email := "user@example.com"
+	if rec := post(t, sendOTPHandler(store), "/send-otp", `{"email":"`+email+`"}`); rec.Code != http.StatusOK {
+		t.Fatalf("send-otp status = %d", rec.Code)
+	}
+	verifyBody := `{"email":"` + email + `","otp":"` + store.otps[email] + `"}`
+	if rec := post(t, verifyOTPHandler(store), "/verify-otp", verifyBody); rec.Code != http.StatusOK {
+		t.Fatalf("verify-otp status = %d", rec.Code)
+	}
+	if rec := post(t, loginHandler(store), "/login", `{"email":"`+email+`"}`); rec.Code != http.StatusOK {
+		t.Fatalf("login status = %d", rec.Code)
+	}
+	if rec := post(t, verifyOTPHandler(store), "/verify-otp", verifyBody); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("replayed verify-otp status = %d, want 401", rec.Code)
+	}
+	if rec := post(t, loginHandler(store), "/login", `{"email":"`+email+`"}`); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("login after replay status = %d, want 401", rec.Code)
+	}
+	if len(store.tokens) != 1 {
+		t.Fatalf("tokens = %d, want 1", len(store.tokens))
+	}
+}
