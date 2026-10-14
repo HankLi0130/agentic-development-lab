@@ -16,6 +16,11 @@
 - On failure, fix the implementation. Never modify, delete, or skip existing tests to make them pass. If a test itself seems wrong, stop and ask me.
 - Use `make fmt` to fix formatting failures.
 
+## API Contract
+
+- `openapi.yaml` is the API contract and source of truth.
+- Never modify it to make tests pass. If a task requires a contract change, stop and ask me first.
+
 ## Language Rules
 
 - Use English for all code, inline comments, and commit messages.
