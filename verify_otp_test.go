@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
+	"time"
 )
 
 func postVerify(t *testing.T, store *otpStore, body string) *httptest.ResponseRecorder {
@@ -122,4 +124,63 @@ func TestVerifyOTPConcurrentSingleUse(t *testing.T) {
 	if ok != 1 {
 		t.Fatalf("successful verifies = %d, want 1", ok)
 	}
+}
+
+func TestVerifyOTPExpiry(t *testing.T) {
+	body := `{"email":"user@example.com","otp":"123456"}`
+	tests := []struct {
+		name       string
+		wait       time.Duration
+		wantStatus int
+	}{
+		{"before expiry", otpTTL - time.Second, http.StatusOK},
+		{"at expiry", otpTTL, http.StatusUnauthorized},
+		{"after expiry", otpTTL + time.Second, http.StatusUnauthorized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				store := newOTPStore()
+				store.save("user@example.com", "123456")
+				time.Sleep(tt.wait)
+				if rec := postVerify(t, store, body); rec.Code != tt.wantStatus {
+					t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+				}
+			})
+		})
+	}
+}
+
+func TestExpiredOTPIsRemoved(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := newOTPStore()
+		store.save("user@example.com", "123456")
+		time.Sleep(otpTTL)
+		rec := postVerify(t, store, `{"email":"user@example.com","otp":"123456"}`)
+		if got := strings.TrimSpace(rec.Body.String()); got != `{"error":"invalid otp"}` {
+			t.Fatalf("body = %s", got)
+		}
+		if _, ok := store.otps["user@example.com"]; ok {
+			t.Fatal("expired otp still stored")
+		}
+		if _, ok := store.expiresAt["user@example.com"]; ok {
+			t.Fatal("expired expiry still stored")
+		}
+		if store.verified["user@example.com"] {
+			t.Fatal("user marked verified with expired otp")
+		}
+	})
+}
+
+func TestResendOTPResetsExpiry(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := newOTPStore()
+		store.save("user@example.com", "111111")
+		time.Sleep(50 * time.Second)
+		store.save("user@example.com", "123456")
+		time.Sleep(50 * time.Second)
+		if rec := postVerify(t, store, `{"email":"user@example.com","otp":"123456"}`); rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+	})
 }
