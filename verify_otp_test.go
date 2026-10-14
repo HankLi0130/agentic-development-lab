@@ -202,3 +202,124 @@ func TestVerifiedOTPIsRemoved(t *testing.T) {
 		t.Fatalf("reuse status = %d, body = %s", rec.Code, got)
 	}
 }
+
+func TestVerifyOTPLockedAfterMaxFailures(t *testing.T) {
+	store := newOTPStore()
+	store.save("user@example.com", "123456")
+	for i := range maxOTPFailures {
+		if rec := postVerify(t, store, `{"email":"user@example.com","otp":"000000"}`); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("failure %d status = %d, want 401", i+1, rec.Code)
+		}
+	}
+	rec := postVerify(t, store, `{"email":"user@example.com","otp":"123456"}`)
+	if got := strings.TrimSpace(rec.Body.String()); rec.Code != http.StatusUnauthorized || got != `{"error":"invalid otp"}` {
+		t.Fatalf("correct otp after lock: status = %d, body = %s", rec.Code, got)
+	}
+	if _, ok := store.otps["user@example.com"]; ok {
+		t.Fatal("locked otp still stored")
+	}
+	if _, ok := store.failures["user@example.com"]; ok {
+		t.Fatal("failure count still stored")
+	}
+	if store.verified["user@example.com"] {
+		t.Fatal("user marked verified after lock")
+	}
+}
+
+func TestVerifyOTPSucceedsBeforeMaxFailures(t *testing.T) {
+	store := newOTPStore()
+	store.save("user@example.com", "123456")
+	for range maxOTPFailures - 1 {
+		postVerify(t, store, `{"email":"user@example.com","otp":"000000"}`)
+	}
+	if rec := postVerify(t, store, `{"email":"user@example.com","otp":"123456"}`); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if _, ok := store.failures["user@example.com"]; ok {
+		t.Fatal("failure count still stored after success")
+	}
+}
+
+func TestMalformedOTPDoesNotCountAsFailure(t *testing.T) {
+	store := newOTPStore()
+	store.save("user@example.com", "123456")
+	for range maxOTPFailures {
+		postVerify(t, store, `{"email":"user@example.com","otp":"12345"}`)
+	}
+	if rec := postVerify(t, store, `{"email":"user@example.com","otp":"123456"}`); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestResendOTPResetsFailures(t *testing.T) {
+	store := newOTPStore()
+	store.save("user@example.com", "111111")
+	for range maxOTPFailures - 1 {
+		postVerify(t, store, `{"email":"user@example.com","otp":"000000"}`)
+	}
+	store.save("user@example.com", "123456")
+	for range maxOTPFailures - 1 {
+		postVerify(t, store, `{"email":"user@example.com","otp":"000000"}`)
+	}
+	if rec := postVerify(t, store, `{"email":"user@example.com","otp":"123456"}`); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestResendOTPAfterLockWorks(t *testing.T) {
+	store := newOTPStore()
+	store.save("user@example.com", "111111")
+	for range maxOTPFailures {
+		postVerify(t, store, `{"email":"user@example.com","otp":"000000"}`)
+	}
+	store.save("user@example.com", "123456")
+	if rec := postVerify(t, store, `{"email":"user@example.com","otp":"123456"}`); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestVerifyOTPConcurrentFailuresLock(t *testing.T) {
+	store := newOTPStore()
+	store.save("user@example.com", "123456")
+	const n = 50
+	var wg sync.WaitGroup
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			postVerify(t, store, `{"email":"user@example.com","otp":"000000"}`)
+		}()
+	}
+	wg.Wait()
+	if rec := postVerify(t, store, `{"email":"user@example.com","otp":"123456"}`); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}
+
+func TestExpiredOTPClearsFailures(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		store := newOTPStore()
+		store.save("user@example.com", "123456")
+		postVerify(t, store, `{"email":"user@example.com","otp":"000000"}`)
+		time.Sleep(otpTTL)
+		postVerify(t, store, `{"email":"user@example.com","otp":"000000"}`)
+		if _, ok := store.failures["user@example.com"]; ok {
+			t.Fatal("failure count still stored after expiry")
+		}
+	})
+}
+
+func TestVerifyOTPLocksOnFifthFailure(t *testing.T) {
+	store := newOTPStore()
+	store.save("user@example.com", "123456")
+	for range 4 {
+		postVerify(t, store, `{"email":"user@example.com","otp":"000000"}`)
+	}
+	if _, ok := store.otps["user@example.com"]; !ok {
+		t.Fatal("otp discarded after 4 failures")
+	}
+	postVerify(t, store, `{"email":"user@example.com","otp":"000000"}`)
+	if _, ok := store.otps["user@example.com"]; ok {
+		t.Fatal("otp still stored after 5 failures")
+	}
+}
