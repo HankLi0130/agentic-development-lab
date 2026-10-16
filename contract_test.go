@@ -43,6 +43,7 @@ func TestContract(t *testing.T) {
 	}{
 		{"/send-otp", `{"email":"` + email + `"}`, nil, http.StatusOK},
 		{"/send-otp", `{"email":"bad"}`, nil, http.StatusBadRequest},
+		{"/send-otp", `{"email":"` + email + `"}`, func(s *otpStore) { s.issue(email, "123456") }, http.StatusTooManyRequests},
 		{"/verify-otp", `{"email":"` + email + `","otp":"123456"}`, func(s *otpStore) { s.save(email, "123456") }, http.StatusOK},
 		{"/verify-otp", `{`, nil, http.StatusBadRequest},
 		{"/verify-otp", `{"email":"` + email + `","otp":"000000"}`, func(s *otpStore) { s.save(email, "123456") }, http.StatusUnauthorized},

@@ -27,6 +27,14 @@ paths:
                     enum: [otp sent]
         '400':
           $ref: '#/components/responses/BadRequest'
+        '429':
+          description: OTP requested again within 30s cooldown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: too many requests
         '500':
           $ref: '#/components/responses/InternalError'
 

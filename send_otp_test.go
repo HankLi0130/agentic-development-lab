@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 var otpPattern = regexp.MustCompile(`^\d{6}$`)
@@ -131,5 +132,74 @@ func TestGenerateOTPIsSixDigits(t *testing.T) {
 		if !isValidOTP(otp) {
 			t.Fatalf("generated otp %q is not 6 digits", otp)
 		}
+	}
+}
+
+func TestSendOTPCooldown(t *testing.T) {
+	store := newOTPStore()
+	h := sendOTPHandler(store)
+	post(t, h, "/send-otp", `{"email":"user@example.com"}`)
+	first := store.otps["user@example.com"]
+
+	rec := post(t, h, "/send-otp", `{"email":"user@example.com"}`)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", rec.Code)
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"error":"too many requests"}` {
+		t.Fatalf("body = %s", got)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", ct)
+	}
+	if got := store.otps["user@example.com"]; got != first {
+		t.Fatalf("otp changed during cooldown: %q -> %q", first, got)
+	}
+}
+
+func TestSendOTPCooldownDoesNotLogFakeSend(t *testing.T) {
+	store := newOTPStore()
+	h := sendOTPHandler(store)
+	post(t, h, "/send-otp", `{"email":"user@example.com"}`)
+
+	var buf bytes.Buffer
+	orig := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(orig) })
+
+	post(t, h, "/send-otp", `{"email":"user@example.com"}`)
+	if strings.Contains(buf.String(), "fake send otp") {
+		t.Fatalf("otp sent during cooldown: %q", buf.String())
+	}
+}
+
+func TestSendOTPCooldownIsPerEmail(t *testing.T) {
+	store := newOTPStore()
+	h := sendOTPHandler(store)
+	post(t, h, "/send-otp", `{"email":"a@example.com"}`)
+	if rec := post(t, h, "/send-otp", `{"email":"b@example.com"}`); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestSendOTPAllowedAfterCooldown(t *testing.T) {
+	store := newOTPStore()
+	h := sendOTPHandler(store)
+	post(t, h, "/send-otp", `{"email":"user@example.com"}`)
+	store.lastSent["user@example.com"] = time.Now().Add(-otpCooldown)
+
+	if rec := post(t, h, "/send-otp", `{"email":"user@example.com"}`); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestSendOTPFailedRequestDoesNotStartCooldown(t *testing.T) {
+	store := newOTPStore()
+	h := sendOTPHandler(store)
+	post(t, h, "/send-otp", `{"email":"bad"}`)
+	if len(store.lastSent) != 0 {
+		t.Fatalf("cooldown started on invalid request: %v", store.lastSent)
+	}
+	if rec := post(t, h, "/send-otp", `{"email":"user@example.com"}`); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 }

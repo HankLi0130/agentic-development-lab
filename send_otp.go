@@ -33,7 +33,10 @@ func sendOTPHandler(store *otpStore) http.HandlerFunc {
 			return
 		}
 
-		store.save(req.Email, otp)
+		if !store.issue(req.Email, otp) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many requests"})
+			return
+		}
 
 		fakeSendOTP(req.Email, otp)
 
