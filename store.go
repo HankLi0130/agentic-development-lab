@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/subtle"
+	"errors"
 	"sync"
 	"time"
 )
@@ -11,6 +12,8 @@ const (
 	otpCooldown    = 30 * time.Second
 	maxOTPFailures = 5
 )
+
+var errNotVerified = errors.New("email not verified")
 
 type otpStore struct {
 	mu        sync.Mutex
@@ -23,7 +26,14 @@ type otpStore struct {
 }
 
 func newOTPStore() *otpStore {
-	return &otpStore{otps: make(map[string]string), expiresAt: make(map[string]time.Time), lastSent: make(map[string]time.Time), failures: make(map[string]int), verified: make(map[string]bool), tokens: make(map[string]string)}
+	return &otpStore{
+		otps:      make(map[string]string),
+		expiresAt: make(map[string]time.Time),
+		lastSent:  make(map[string]time.Time),
+		failures:  make(map[string]int),
+		verified:  make(map[string]bool),
+		tokens:    make(map[string]string),
+	}
 }
 
 func (s *otpStore) issue(email, otp string) bool {
@@ -34,19 +44,13 @@ func (s *otpStore) issue(email, otp string) bool {
 		return false
 	}
 	s.lastSent[email] = now
-	s.saveLocked(email, otp)
+	s.saveLocked(email, otp, now)
 	return true
 }
 
-func (s *otpStore) save(email, otp string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.saveLocked(email, otp)
-}
-
-func (s *otpStore) saveLocked(email, otp string) {
+func (s *otpStore) saveLocked(email, otp string, now time.Time) {
 	s.otps[email] = otp
-	s.expiresAt[email] = time.Now().Add(otpTTL)
+	s.expiresAt[email] = now.Add(otpTTL)
 	delete(s.failures, email)
 }
 
@@ -62,8 +66,9 @@ func (s *otpStore) verify(email, otp string) bool {
 		return false
 	}
 	if subtle.ConstantTimeCompare([]byte(stored), []byte(otp)) != 1 {
-		s.failures[email]++
-		if s.failures[email] >= maxOTPFailures {
+		n := s.failures[email] + 1
+		s.failures[email] = n
+		if n >= maxOTPFailures {
 			s.discard(email)
 		}
 		return false
@@ -79,13 +84,17 @@ func (s *otpStore) discard(email string) {
 	delete(s.failures, email)
 }
 
-func (s *otpStore) login(email, token string) bool {
+func (s *otpStore) login(email string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.verified[email] {
-		return false
+		return "", errNotVerified
+	}
+	token, err := generateToken()
+	if err != nil {
+		return "", err
 	}
 	delete(s.verified, email)
 	s.tokens[token] = email
-	return true
+	return token, nil
 }

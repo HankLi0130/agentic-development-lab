@@ -1,35 +1,28 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 )
 
 type verifyOTPRequest struct {
-	Email string `json:"email"`
-	OTP   string `json:"otp"`
+	emailRequest
+	OTP string `json:"otp"`
 }
 
 func verifyOTPHandler(store *otpStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req verifyOTPRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-			return
-		}
-
-		if !isValidEmail(req.Email) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		if !decodeRequest(w, r, &req) {
 			return
 		}
 
 		if !isValidOTP(req.OTP) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid otp"})
+			writeError(w, http.StatusBadRequest, "invalid otp")
 			return
 		}
 
 		if !store.verify(req.Email, req.OTP) {
-			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid otp"})
+			writeError(w, http.StatusUnauthorized, "invalid otp")
 			return
 		}
 
